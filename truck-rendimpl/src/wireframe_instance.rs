@@ -128,10 +128,14 @@ impl Rendered for WireFrameInstance {
             },
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
+                depth_write_enabled: false,
+                depth_compare: CompareFunction::LessEqual,
                 stencil: Default::default(),
-                bias: Default::default(),
+                bias: DepthBiasState {
+                    constant: -1,
+                    slope_scale: 0.0,
+                    clamp: 0.0,
+                },
             }),
             multisample: MultisampleState {
                 count: sample_count,

@@ -132,7 +132,7 @@ impl Rendered for WireFrameInstance {
                 depth_compare: CompareFunction::LessEqual,
                 stencil: Default::default(),
                 bias: DepthBiasState {
-                    constant: -1,
+                    constant: 0,
                     slope_scale: 0.0,
                     clamp: 0.0,
                 },

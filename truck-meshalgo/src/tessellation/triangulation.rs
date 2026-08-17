@@ -445,19 +445,9 @@ impl PolyBoundary {
             _ => {}
         }
         if !closed.iter().any(|curve| loop_orientation(curve)) {
-            if let (Some((u0, u1)), Some((v0, v1))) = surface.try_range_tuple() {
-                let p = [
-                    (Point2::new(u0, v0), surface.subs(u0, v0)).into(),
-                    (Point2::new(u1, v0), surface.subs(u1, v0)).into(),
-                    (Point2::new(u1, v1), surface.subs(u1, v1)).into(),
-                    (Point2::new(u0, v1), surface.subs(u0, v1)).into(),
-                ];
-                let vec0 = polyline_on_surface(surface, p[0], p[1], tol);
-                let vec1 = polyline_on_surface(surface, p[1], p[2], tol);
-                let vec2 = polyline_on_surface(surface, p[2], p[3], tol);
-                let vec3 = polyline_on_surface(surface, p[3], p[0], tol);
-                closed.push(connect_edges([vec0, vec1, vec2, vec3]));
-            }
+            // If all loops are oriented the same (e.g. inverted), flip them instead
+            // of injecting a full-surface boundary that would fill holes.
+            closed.iter_mut().for_each(|curve| curve.reverse());
         }
         Self(closed)
     }

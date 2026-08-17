@@ -75,6 +75,42 @@ impl From<IntersectionCurve<BSplineCurve<Point3>, Surface, Surface>> for Curve {
     }
 }
 
+impl TryFrom<PCurve<Line<Point2>, Surface>> for Curve {
+    type Error = ();
+    fn try_from(value: PCurve<Line<Point2>, Surface>) -> std::result::Result<Self, Self::Error> {
+        let (line, surface) = value.decompose();
+        match surface {
+            Surface::Plane(plane) => {
+                let p0 = plane.subs(line.0.x, line.0.y);
+                let p1 = plane.subs(line.1.x, line.1.y);
+                Ok(Curve::Line(Line(p0, p1)))
+            }
+            surface => {
+                let pcurve = PCurve::new(line, surface);
+                let range = pcurve.range_tuple();
+                let tol = 1.0e-6;
+                let trials = 32;
+                if let Some(curve) =
+                    BSplineCurve::quadratic_approximation(&pcurve, range, tol, trials)
+                {
+                    return Ok(Curve::BSplineCurve(curve));
+                }
+
+                let samples = 8usize;
+                let (t0, t1) = range;
+                let mut points = Vec::with_capacity(samples + 1);
+                for i in 0..=samples {
+                    let t = t0 + (t1 - t0) * (i as f64 / samples as f64);
+                    points.push(pcurve.subs(t));
+                }
+                let mut knot_vec = KnotVec::uniform_knot(1, samples);
+                knot_vec.transform(t1 - t0, t0);
+                Ok(Curve::BSplineCurve(BSplineCurve::new(knot_vec, points)))
+            }
+        }
+    }
+}
+
 impl ToSameGeometry<Curve> for Line<Point3> {
     #[inline]
     fn to_same_geometry(&self) -> Curve { Curve::from(*self) }

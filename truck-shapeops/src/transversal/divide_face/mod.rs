@@ -7,6 +7,13 @@ use std::ops::Deref;
 use truck_meshalgo::prelude::*;
 use truck_topology::*;
 
+fn debug_enabled() -> bool {
+    std::env::var("TRUCK_SHAPEOPS_DEBUG")
+        .ok()
+        .map(|v| v == "1")
+        .unwrap_or(false)
+}
+
 fn create_parameter_boundary<P, C, S>(
     face: &Face<P, C, S>,
     wire: &Wire<P, C>,
@@ -16,11 +23,23 @@ fn create_parameter_boundary<P, C, S>(
 where
     P: Copy,
     C: BoundedCurve<Point = P> + ParameterDivision1D<Point = P>,
-    S: Clone + SearchParameter<D2, Point = P>,
+    S: Clone + SearchParameter<D2, Point = P> + SearchNearestParameter<D2, Point = P>,
 {
     let surface = face.surface();
     let pt = wire.front_vertex().unwrap().point();
-    let p: Point2 = surface.search_parameter(pt, None, 100)?.into();
+    let debug = debug_enabled();
+    let p: Point2 = match surface
+        .search_parameter(pt, None, 100)
+        .or_else(|| surface.search_nearest_parameter(pt, None, 100))
+    {
+        Some(value) => value.into(),
+        None => {
+            if debug {
+                eprintln!("[truck-shapeops] create_parameter_boundary: start param failed");
+            }
+            return None;
+        }
+    };
     let vec = wire.edge_iter().try_fold(vec![p], |mut vec, edge| {
         let poly = polys.entry(edge.id()).or_insert_with(|| {
             let curve = edge.curve();
@@ -29,8 +48,23 @@ where
         });
         let mut p = *vec.last().unwrap();
         let closure = |q: &P| -> Option<Point2> {
-            p = surface.search_parameter(*q, Some(p.into()), 100)?.into();
-            Some(p)
+            match surface
+                .search_parameter(*q, Some(p.into()), 100)
+                .or_else(|| surface.search_nearest_parameter(*q, Some(p.into()), 100))
+            {
+                Some(next) => {
+                    p = next.into();
+                    Some(p)
+                }
+                None => {
+                    if debug {
+                        eprintln!(
+                            "[truck-shapeops] create_parameter_boundary: edge param failed"
+                        );
+                    }
+                    None
+                }
+            }
         };
         let add: Option<Vec<Point2>> = match edge.orientation() {
             true => poly.iter().skip(1).map(closure).collect(),
@@ -56,7 +90,7 @@ fn divide_one_face<C, S>(
 ) -> Option<Vec<FaceWithShapesOpStatus<C, S>>>
 where
     C: BoundedCurve<Point = Point3> + ParameterDivision1D<Point = Point3>,
-    S: Clone + SearchParameter<D2, Point = Point3>,
+    S: Clone + SearchParameter<D2, Point = Point3> + SearchNearestParameter<D2, Point = Point3>,
 {
     let (mut pre_faces, mut negative_wires) = (Vec::new(), Vec::new());
     let mut map = HashMap::default();
@@ -89,7 +123,10 @@ where
                 .into_iter()
                 .map(|chunk| chunk.wire.deref().clone())
                 .collect();
-            let mut new_face = Face::debug_new(wires, surface);
+            let mut new_face = match Face::try_new(wires.clone(), surface.clone()) {
+                Ok(face) => face,
+                Err(_) => Face::new_unchecked(wires, surface),
+            };
             if !face.orientation() {
                 new_face.invert();
             }
@@ -106,7 +143,7 @@ pub fn divide_faces<C, S>(
 ) -> Option<FacesClassification<Point3, C, S>>
 where
     C: BoundedCurve<Point = Point3> + ParameterDivision1D<Point = Point3>,
-    S: Clone + SearchParameter<D2, Point = Point3>,
+    S: Clone + SearchParameter<D2, Point = Point3> + SearchNearestParameter<D2, Point = Point3>,
 {
     let mut res = FacesClassification::<Point3, C, S>::default();
     shell

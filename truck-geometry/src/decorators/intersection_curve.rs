@@ -81,15 +81,17 @@ where
     /// - the uv coordinate on `self.surface1()`
     #[inline(always)]
     pub fn search_triple(&self, t: f64, trials: usize) -> Option<(Point3, Point2, Point2)> {
+        let point = self.leader.subs(t);
         double_projection(
             self.surface0(),
             None,
             self.surface1(),
             None,
-            self.leader.subs(t),
+            point,
             self.leader.der(t),
             trials,
         )
+        .or_else(|| self.search_nearest_point(point, None, None, trials))
     }
     /// Search triple value of the point nearest to `point`.
     /// - the coordinate on 3D space

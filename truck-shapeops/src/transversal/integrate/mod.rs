@@ -78,8 +78,13 @@ fn process_one_pair_of_shells<C: ShapeOpsCurve<S>, S: ShapeOpsSurface>(
     tol: f64,
 ) -> Option<[Shell<Point3, C, S>; 2]> {
     nonpositive_tolerance!(tol);
-    let poly_shell0 = shell0.triangulation(tol);
-    let poly_shell1 = shell1.triangulation(tol);
+    // Use robust triangulation to improve boolean stability on complex faces.
+    let poly_shell0 = shell0.robust_triangulation(tol);
+    let poly_shell1 = shell1.robust_triangulation(tol);
+    let debug = std::env::var("TRUCK_SHAPEOPS_DEBUG")
+        .ok()
+        .map(|v| v == "1")
+        .unwrap_or(false);
     let altshell0: AltCurveShell<C, S> =
         shell0.mapped(|x| *x, |c| Alternative::FirstType(c.clone()), Clone::clone);
     let altshell1: AltCurveShell<C, S> =
@@ -88,10 +93,46 @@ fn process_one_pair_of_shells<C: ShapeOpsCurve<S>, S: ShapeOpsSurface>(
         geom_loops_store0: loops_store0,
         geom_loops_store1: loops_store1,
         ..
-    } = loops_store::create_loops_stores(&altshell0, &poly_shell0, &altshell1, &poly_shell1)?;
-    let mut cls0 = divide_face::divide_faces(&altshell0, &loops_store0, tol)?;
+    } = match loops_store::create_loops_stores(&altshell0, &poly_shell0, &altshell1, &poly_shell1) {
+        Some(value) => value,
+        None => {
+            if debug {
+                eprintln!(
+                    "[truck-shapeops] create_loops_stores failed faces0={} faces1={}",
+                    shell0.len(),
+                    shell1.len()
+                );
+            }
+            return None;
+        }
+    };
+    let mut cls0 = match divide_face::divide_faces(&altshell0, &loops_store0, tol) {
+        Some(value) => value,
+        None => {
+            if debug {
+                eprintln!(
+                    "[truck-shapeops] divide_faces(shell0) failed faces0={} faces1={}",
+                    shell0.len(),
+                    shell1.len()
+                );
+            }
+            return None;
+        }
+    };
     cls0.integrate_by_component();
-    let mut cls1 = divide_face::divide_faces(&altshell1, &loops_store1, tol)?;
+    let mut cls1 = match divide_face::divide_faces(&altshell1, &loops_store1, tol) {
+        Some(value) => value,
+        None => {
+            if debug {
+                eprintln!(
+                    "[truck-shapeops] divide_faces(shell1) failed faces0={} faces1={}",
+                    shell0.len(),
+                    shell1.len()
+                );
+            }
+            return None;
+        }
+    };
     cls1.integrate_by_component();
     let [mut and0, mut or0, unknown0] = cls0.and_or_unknown();
     unknown0.into_iter().try_for_each(|face| {

@@ -160,19 +160,17 @@ where
 {
     let interferences = polygon0.extract_interference(polygon1);
     let polylines = super::polyline_construction::construct_polylines(&interferences);
-    polylines
-        .into_iter()
-        .map(|polyline| {
-            Some((
-                polyline.clone(),
-                IntersectionCurveWithParameters::try_new(
-                    surface0.clone(),
-                    surface1.clone(),
-                    polyline,
-                )?,
-            ))
-        })
-        .collect()
+    let mut out = Vec::new();
+    for polyline in polylines {
+        if let Some(curve) = IntersectionCurveWithParameters::try_new(
+            surface0.clone(),
+            surface1.clone(),
+            polyline.clone(),
+        ) {
+            out.push((polyline, curve));
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]
